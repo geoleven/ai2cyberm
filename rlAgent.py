@@ -9,13 +9,15 @@ from stable_baselines3.common.callbacks import EvalCallback
 
 
 class ai2cyberEnv(gym.Env):
-    def __init__(self, seqLength: int = 5, maxSteps: int = 20):
+    def __init__(self, seqLength: int = 5, maxSteps: int = 20, verbose: bool = False):
         super().__init__()
         self.seqLength: int = seqLength
         self.maxSteps: int = maxSteps
+        self.verbose: bool = verbose
         self.baseUrl: str = "http://63.176.107.188:5005"
         self.uuid: str = None
 
+        # The next two I could programatically get from the API, but for now I'm hardcoding them based on the API documentation and testing.
         self.action_space: gym.spaces.Discrete = gym.spaces.Discrete(3)
         self.observation_space: gym.spaces.Box = gym.spaces.Box(
             low=0.0, 
@@ -75,7 +77,10 @@ class ai2cyberEnv(gym.Env):
             if "goal_reached" in info:
                 infoDict["goal_reached"] = True
             truncated = data.get("truncated", False)
-            
+
+            if self.verbose:
+                print(f"Observation: {observation}")
+
             return observation, reward, done, truncated, infoDict
         else:
             raise ConnectionError(f"Failed to take step. Status code: {response.status_code}, Response: {response.text}")
@@ -97,12 +102,12 @@ class trainAgent:
         self.evalLogDir = evalLogDir
         # self.learning_rate = 0.1
         self.hyperparams = {
-            "learning_rate": 0.001,
-            "n_steps": 1024,
+            "learning_rate": 0.0005,
+            "n_steps": 2048,
             "batch_size": 64,
             "n_epochs": 10,
             "gamma": 0.99,
-            "ent_coef": 0.01,
+            "ent_coef": 0.05,
             "clip_range": 0.2
         }
 
@@ -136,7 +141,7 @@ class trainAgent:
 
     def runAll(self):
         for length in self.lengths:
-            timeSteps = 40000 + (length - 5) * 20000
+            timeSteps = 50000 + (length - 5) * 50000
             self.trainPPO(seqLength=length, timeSteps=timeSteps)
 
 
