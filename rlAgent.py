@@ -9,13 +9,15 @@ from stable_baselines3.common.callbacks import EvalCallback
 
 
 class ai2cyberEnv(gym.Env):
-    def __init__(self, seqLength: int = 5, maxSteps: int = 20, verbose: bool = False):
+    def __init__(self, seqLength: int = 5, maxSteps: int = 20, verbose: bool = False, training: bool = False):
         super().__init__()
         self.seqLength: int = seqLength
         self.maxSteps: int = maxSteps
         self.verbose: bool = verbose
         self.baseUrl: str = "http://63.176.107.188:5005"
         self.uuid: str = None
+        self.training: bool = training
+        self.previousObservation: np.ndarray | None = None
 
         # The next two I could programatically get from the API, but for now I'm hardcoding them based on the API documentation and testing.
         self.action_space: gym.spaces.Discrete = gym.spaces.Discrete(3)
@@ -76,10 +78,21 @@ class ai2cyberEnv(gym.Env):
             infoDict = {}
             if "goal_reached" in info:
                 infoDict["goal_reached"] = True
+                done = True
             truncated = data.get("truncated", False)
+            if "timeout_reset" in info:
+                infoDict["timeout_reset"] = True
+                truncated = True
 
             if self.verbose:
                 print(f"Observation: {observation}")
+
+            if self.training and self.previousObservation is not None:
+                # print(f"Action taken: {action}, Reward received: {reward}, Done: {done}, Truncated: {truncated}, Info: {infoDict}")
+                ashesCur = observation[:self.seqLength]
+                ashesPre = self.previousObservation[:self.seqLength]
+                if np.sum*(ashesCur) < np.sum(ashesPre):
+                    reward = -2.0
 
             return observation, reward, done, truncated, infoDict
         else:
@@ -124,8 +137,8 @@ class trainAgent:
 
         maxSteps = seqLength * 4
 
-        env = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps), n_envs=1)
-        evalEnv = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps), n_envs=1)
+        env = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=1)
+        evalEnv = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=1)
 
         # TODO check the paths
         evalCallback = EvalCallback(evalEnv, best_model_save_path=self.evalLogDir+f"/seq{seqLength}", log_path=self.evalLogDir+f"/seq{seqLength}", eval_freq=5000, deterministic=True, render=False)
@@ -141,7 +154,7 @@ class trainAgent:
 
     def runAll(self):
         for length in self.lengths:
-            timeSteps = 50000 + (length - 5) * 50000
+            timeSteps = 50000 + (length - 5) * 20000
             self.trainPPO(seqLength=length, timeSteps=timeSteps)
 
 
