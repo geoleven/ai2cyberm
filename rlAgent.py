@@ -5,7 +5,9 @@ from stable_baselines3 import PPO
 from os import makedirs
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
+import torch as th
 
 
 class ai2cyberEnv(gym.Env):
@@ -39,7 +41,8 @@ class ai2cyberEnv(gym.Env):
         if response.status_code == 200:
             data: dict = response.json()
             self.uuid = data["uuid"]
-            print(f"\nNew game UUID: {self.uuid}", flush=True)
+            if self.verbose:
+                print(f"\nNew game UUID: {self.uuid}", flush=True)
             if not self.uuid:
                 raise ValueError("API did not return a valid UUID.")
         else:
@@ -59,6 +62,7 @@ class ai2cyberEnv(gym.Env):
             infoDict = {}
             if "goal_reached" in info:
                 infoDict["goal_reached"] = True
+            # Maybe I shuold return this instead of truncated?
             if "timeout_reset" in info:
                 infoDict["timeout_reset"] = True
             return observation, infoDict
@@ -79,6 +83,7 @@ class ai2cyberEnv(gym.Env):
             if "goal_reached" in info:
                 infoDict["goal_reached"] = True
                 done = True
+            # This does not need to exist to be frank as it is never really used that way by the api.
             truncated = data.get("truncated", False)
             if "timeout_reset" in info:
                 infoDict["timeout_reset"] = True
@@ -87,14 +92,20 @@ class ai2cyberEnv(gym.Env):
             if self.verbose:
                 print(f"Observation: {observation}")
 
-            if self.training and self.previousObservation is not None:
-                # print(f"Action taken: {action}, Reward received: {reward}, Done: {done}, Truncated: {truncated}, Info: {infoDict}")
-                ashesCur = observation[:self.seqLength]
-                ashesPre = self.previousObservation[:self.seqLength]
-                if np.sum*(ashesCur) < np.sum(ashesPre):
-                    reward = -2.0
+            # if self.training and self.previousObservation is not None:
+            #     # print(f"Action taken: {action}, Reward received: {reward}, Done: {done}, Truncated: {truncated}, Info: {infoDict}")
+            #     ashesCur = observation[:self.seqLength]
+            #     ashesPre = self.previousObservation[:self.seqLength]
+            #     if np.sum(ashesCur) < np.sum(ashesPre):
+            #         reward = -2.0
+            if self.training and reward < 0:
+                reward = reward * 10.0
+            if self.training and reward > 0:
+                reward = reward * 1.1
 
-            return observation, reward, done, truncated, infoDict
+            # print(str(action) + "\t" + str(reward))
+
+            return observation, float(reward), done, truncated, infoDict
         else:
             raise ConnectionError(f"Failed to take step. Status code: {response.status_code}, Response: {response.text}")
         
@@ -114,14 +125,18 @@ class trainAgent:
         self.modelDir = modelDir
         self.evalLogDir = evalLogDir
         # self.learning_rate = 0.1
+
+        # policy_kwargs = dict(activation_fn=th.nn.ReLU,net_arch=dict(pi=[64, 64], vf=[64, 64]),)
+
         self.hyperparams = {
             "learning_rate": 0.0005,
             "n_steps": 2048,
             "batch_size": 64,
-            "n_epochs": 10,
+            "n_epochs": 5,
             "gamma": 0.99,
+            "gae_lambda": 0.95,
             "ent_coef": 0.05,
-            "clip_range": 0.2
+            "clip_range": 0.2,
         }
 
     # @staticmethod
@@ -137,15 +152,15 @@ class trainAgent:
 
         maxSteps = seqLength * 4
 
-        env = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=1)
-        evalEnv = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=1)
+        env = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=4, vec_env_cls=SubprocVecEnv)
+        evalEnv = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=4, vec_env_cls=SubprocVecEnv)
 
         # TODO check the paths
         evalCallback = EvalCallback(evalEnv, best_model_save_path=self.evalLogDir+f"/seq{seqLength}", log_path=self.evalLogDir+f"/seq{seqLength}", eval_freq=5000, deterministic=True, render=False)
 
-        model = PPO("MlpPolicy", env, verbose=1, tensorboard_log=self.logDir+f"/seq{seqLength}", **self.hyperparams)
+        model = PPO("MlpPolicy", env, verbose=1, tensorboard_log=self.logDir+f"/seq{seqLength}", **self.hyperparams, policy_kwargs=dict(activation_fn=th.nn.ReLU,net_arch=dict(pi=[64, 64], vf=[64, 64]),))
 
-        model.learn(total_timesteps=timeSteps, callback=evalCallback)
+        model.learn(total_timesteps=timeSteps, callback=evalCallback, progress_bar=True)
         model.save(self.modelDir+f"/ppo_ai2cyber_seq{seqLength}")
 
         print("Training complete.")
@@ -154,7 +169,7 @@ class trainAgent:
 
     def runAll(self):
         for length in self.lengths:
-            timeSteps = 50000 + (length - 5) * 20000
+            timeSteps = 50000 + (length - 5) * 50000
             self.trainPPO(seqLength=length, timeSteps=timeSteps)
 
 

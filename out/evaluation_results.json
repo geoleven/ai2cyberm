@@ -3,27 +3,27 @@
         "seqLength": 5,
         "maxSteps": 20,
         "numEpisodes": 10,
-        "average_reward": 23.0,
-        "reward_std_dev": 1.0954451150103321,
-        "average_steps": 6.5,
-        "steps_std_dev": 1.4317821063276353
+        "average_reward": 23.7,
+        "reward_std_dev": 1.2688577540449522,
+        "average_steps": 7.0,
+        "steps_std_dev": 2.3664319132398464
     },
     {
         "seqLength": 6,
         "maxSteps": 24,
         "numEpisodes": 10,
-        "average_reward": 11.320000000000002,
-        "reward_std_dev": 4.559999999999999,
-        "average_steps": 21.7,
-        "steps_std_dev": 6.9
+        "average_reward": 27.0,
+        "reward_std_dev": 0.8944271909999159,
+        "average_steps": 7.0,
+        "steps_std_dev": 1.7888543819998317
     },
     {
         "seqLength": 7,
         "maxSteps": 28,
         "numEpisodes": 10,
-        "average_reward": 13.330000000000004,
-        "reward_std_dev": 5.189999999999999,
-        "average_steps": 25.4,
-        "steps_std_dev": 7.8
+        "average_reward": 25.6,
+        "reward_std_dev": 9.361303328062817,
+        "average_steps": 14.6,
+        "steps_std_dev": 8.822698000045111
     }
 ]
