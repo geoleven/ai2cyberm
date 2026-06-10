@@ -152,8 +152,8 @@ class trainAgent:
 
         maxSteps = seqLength * 4
 
-        env = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=4, vec_env_cls=SubprocVecEnv)
-        evalEnv = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=4, vec_env_cls=SubprocVecEnv)
+        env = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=6, vec_env_cls=SubprocVecEnv)
+        evalEnv = make_vec_env(lambda: ai2cyberEnv(seqLength=seqLength, maxSteps=maxSteps, training=True), n_envs=6, vec_env_cls=SubprocVecEnv)
 
         # TODO check the paths
         evalCallback = EvalCallback(evalEnv, best_model_save_path=self.evalLogDir+f"/seq{seqLength}", log_path=self.evalLogDir+f"/seq{seqLength}", eval_freq=5000, deterministic=True, render=False)
@@ -169,7 +169,7 @@ class trainAgent:
 
     def runAll(self):
         for length in self.lengths:
-            timeSteps = 50000 + (length - 5) * 50000
+            timeSteps = 100000 + (length - 5) * 50000
             self.trainPPO(seqLength=length, timeSteps=timeSteps)
 
 
