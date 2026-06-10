@@ -9,7 +9,7 @@ class evalModel:
     @staticmethod
     def writeResults(resultsFile: str, results: dict | list):
         with open(resultsFile, "w") as f:
-            dump(results, f)
+            dump(results, f, indent=4)
 
     @staticmethod
     def evaluate(modelPath: str, numEpisodes: int = 10, seqLength: int = 5, maxSteps: int | None = None, verbose: bool = False):
@@ -70,15 +70,7 @@ if __name__ == "__main__":
     results = []
     for seqLength in [5, 6, 7]:
         modelPath = f"./out/models/seq{seqLength}"
-        currentRes = evalModel.evaluate(modelPath=f"./out/models/ppo_ai2cyber_seq{seqLength}.zip", numEpisodes=10, seqLength=seqLength)
+        currentRes = evalModel.evaluate(modelPath=f"./out/models/ppo_ai2cyber_seq{seqLength}.zip", numEpisodes=10, seqLength=seqLength, verbose=False)
         if currentRes is not None:
             results.append(currentRes)
-            # Αυτό το είχα αρχικά για να λύσει για το 7άρι πρόβλημα αν δεν φτάσουν τα maxsteps ορισμένα ως 4*seqLength.
-            maxStepsMultiplier = 4
-            while currentRes.get("steps_std_dev") == 0.0:
-                maxStepsMultiplier = maxStepsMultiplier * 2
-                print(f"Warning: Steps Std Dev is 0.0 for seqLength {seqLength}. Increasing maxSteps for more reliable results.")
-                currentRes = evalModel.evaluate(modelPath=f"./out/models/ppo_ai2cyber_seq{seqLength}.zip", numEpisodes=10, seqLength=seqLength, maxSteps=seqLength*maxStepsMultiplier, verbose=True)
-                if currentRes is not None:
-                    results.append(currentRes)
     evalModel.writeResults(resultsFile=f"./out/evaluation_results.json", results=results)
