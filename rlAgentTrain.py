@@ -3,6 +3,14 @@ from collections import defaultdict
 import numpy as np
 import requests
 # import json
+from enum import IntEnum
+from tqdm import tqdm
+from matplotlib import pyplot as plt
+
+class Action(IntEnum):
+    BIT_FLIP = 0
+    MOVE_LEFT = 1
+    MOVE_RIGHT = 2
 
 class ai2cyberEnv(gym.Env):
     def __init__(self, seqLength: int = 5, maxSteps: int = 20):
@@ -30,22 +38,23 @@ class ai2cyberEnv(gym.Env):
         if response.status_code == 200:
             data: dict = response.json()
             self.uuid = data["uuid"]
-            print(self.uuid)
+            print(f"\nNew game UUID: {self.uuid}", flush=True)
             if not self.uuid:
                 raise ValueError("API did not return a valid UUID.")
         else:
             raise ConnectionError(f"Failed to start new game. Status code: {response.status_code}, Response: {response.text}")
         
     
-    def reset(self, uuid: str = None):
-        super().reset()
+    def reset(self, uuid: str = None, seed = None, options = None):
+        super().reset(seed=seed)
         if not self.uuid:
+            # print(self.uuid)
             self.new_game()
         endpoint = f"{self.baseUrl}/reset"
         response = requests.post(endpoint, headers={"Content-Type": "application/json"}, json={"uuid": self.uuid})
         if response.status_code == 200:
             data = response.json()
-            observation = np.array(data.get("observation", []), dtype=np.float32)
+            observation = tuple(np.array(data.get("observation", []), dtype=np.float32))
             info = data.get("info", {})
             infoDict = {}
             if "goal_reached" in info:
@@ -53,9 +62,33 @@ class ai2cyberEnv(gym.Env):
             if "timeout_reset" in info:
                 infoDict["timeout_reset"] = True
             return observation, infoDict
-
         else:
             raise ConnectionError(f"Failed to reset game. Status code: {response.status_code}, Response: {response.text}")
+        
+    # Action 0: flip bit
+    # Action 1: left move
+    # Action 2: right move
+    def step(self, action: int):
+        endpoint = f"{self.baseUrl}/step"
+        # print(self.uuid.type)
+        # print(type(action))
+        # print(f"{{\"uuid\": \"{self.uuid}\", \"action\": {action}}}")
+        response = requests.post(endpoint, headers={"Content-Type": "application/json"}, json={"uuid": self.uuid, "action": int(action)})
+        if response.status_code == 200:
+            data = response.json()
+            observation = tuple(np.array(data.get("observation", []), dtype=np.float32))
+            reward = data.get("reward", 0.0)
+            done = data.get("done", False)
+            info = data.get("info", {})
+            truncated = data.get("truncated", False)
+            infoDict = {}
+            if "goal_reached" in info:
+                infoDict["goal_reached"] = True
+            if "timeout_reset" in info:
+                infoDict["timeout_reset"] = True
+            return observation, reward, done, truncated, infoDict
+        else:
+            raise ConnectionError(f"Failed to take step. Status code: {response.status_code}, Response: {response.text}")
         
 
         
@@ -63,7 +96,6 @@ class ai2cyberEnv(gym.Env):
 
 class trainAgent:
     def __init__(self, 
-                 base_url: str,
                  env: gym.Env,
                  learning_rate: float,
                  initial_epsilon: float,
@@ -82,6 +114,7 @@ class trainAgent:
         """
         self.env = env
         self.q_values = defaultdict(lambda: np.zeros(env.action_space.n))
+        # print(self.q_values.keys())
         self.lr = learning_rate
         self.epsilon = initial_epsilon
         self.epsilon_decay = epsilon_decay
@@ -90,11 +123,11 @@ class trainAgent:
         self.training_error = []
 
 
-    def get_action(self, obs: tuple[int, int, bool]) -> int:
+    def get_action(self, obs) -> int:
         """Choose an action using epsilon-greedy strategy.
 
         Returns:
-            action: 0 (do nothing) or 1 (flip bit)
+            action 0-2 corresponding to the action space of the environment
         """
         # With probability epsilon: explore (random action)
         if np.random.random() < self.epsilon:
@@ -107,16 +140,13 @@ class trainAgent:
 
     def update(
         self,
-        obs: tuple[int, int, bool],
+        obs,
         action: int,
         reward: float,
         terminated: bool,
-        next_obs: tuple[int, int, bool],
+        next_obs,
     ):
-        """Update Q-value based on experience.
 
-        This is the heart of Q-learning: learn from (state, action, reward, next_state)
-        """
         # What's the best we could do from the next state?
         # (Zero if episode terminated - no future rewards possible)
         future_q_value = (not terminated) * np.max(self.q_values[next_obs])
@@ -148,6 +178,56 @@ class trainAgent:
 
 
 if __name__ == "__main__":
-    env = ai2cyberEnv()
-    env.new_game(5, 20)
-    print(env.reset())
+    nEpisodes = 1000
+    env = ai2cyberEnv(5, 20)
+    env = gym.wrappers.RecordEpisodeStatistics(env, buffer_length=nEpisodes)  # Track rewards and lengths for plotting
+    # env.new_game(5, 20)
+    # # print(env.reset())
+    # print(env.step(Action.BIT_FLIP))
+    # print(env.step(2))
+    # print(env.reset())
+    # print(env.step(0))
+    # print(env.step(Action.MOVE_RIGHT))
+    # print(env.step(2))
+    # print(env.step(0))
+    train = trainAgent(env, learning_rate=0.1, initial_epsilon=1.0, epsilon_decay=0.01, final_epsilon=0.1)
+
+    agent = trainAgent(env, learning_rate=0.1, initial_epsilon=1.0, epsilon_decay=0.01, final_epsilon=0.1)
+
+    for episode in tqdm(range(nEpisodes), desc=str(env.unwrapped.uuid)):
+        obs, info = env.reset()
+        done = False
+        while not done:
+            action = agent.get_action(obs)
+            next_obs, reward, done, truncated, info = env.step(action)
+            agent.update(obs, action, reward, done, next_obs)
+            obs = next_obs
+        agent.decay_epsilon()
+
+    rolling_length = 500
+    fig, axs = plt.subplots(ncols=3, figsize=(12, 5))
+    axs[0].set_title("Episode rewards")
+    # compute and assign a rolling average of the data to provide a smoother graph
+    reward_moving_average = (
+        np.convolve(
+            np.array(env.return_queue).flatten(), np.ones(rolling_length), mode="valid"
+        )
+        / rolling_length
+    )
+    axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+    axs[1].set_title("Episode lengths")
+    length_moving_average = (
+        np.convolve(
+            np.array(env.length_queue).flatten(), np.ones(rolling_length), mode="same"
+        )
+        / rolling_length
+    )
+    axs[1].plot(range(len(length_moving_average)), length_moving_average)
+    axs[2].set_title("Training Error")
+    training_error_moving_average = (
+        np.convolve(np.array(agent.training_error), np.ones(rolling_length), mode="same")
+        / rolling_length
+    )
+    axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
+    plt.tight_layout()
+    plt.show()
